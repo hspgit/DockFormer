@@ -1,0 +1,172 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background: #f5f7fa;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+h1 {
+    color: #2c3e50;
+}
+
+h2 {
+    color: #34495e;
+    margin-bottom: 15px;
+}
+
+/* Table styles */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+}
+
+th {
+    background: #34495e;
+    color: white;
+    font-weight: 500;
+}
+
+tr:nth-child(even) {
+    background: #f8f9fa;
+}
+
+.empty-message {
+    text-align: center;
+    padding: 30px;
+    font-style: italic;
+    color: #7f8c8d;
+}
+
+/* Button styles */
+.btn {
+    display: inline-block;
+    padding: 10px 15px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+
+.btn-primary {
+    background: #2980b9;
+}
+
+.btn-info {
+    background: #3498db;
+}
+
+.btn-danger {
+    background: #e74c3c;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+/* File upload styles */
+.upload-section {
+    background: white;
+    padding: 20px;
+    margin-bottom: 30px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.file-input {
+    margin-bottom: 15px;
+}
+
+/* Status badge styles */
+.status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: white;
+    background: #95a5a6;
+}
+
+.status-running .status-badge {
+    background: #2ecc71;
+}
+
+.status-stopped .status-badge {
+    background: #e74c3c;
+}
+
+.status-created .status-badge {
+    background: #3498db;
+}
+
+.status-exited .status-badge {
+    background: #95a5a6;
+}
+
+.status-paused .status-badge {
+    background: #f39c12;
+}
+
+.status-restarting .status-badge {
+    background: #9b59b6;
+}
+
+/* Actions column */
+.actions {
+    white-space: nowrap;
+}
+
+.actions .btn {
+    margin-right: 5px;
+}
+
+/* Error page */
+.error-page {
+    text-align: center;
+}
+
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 20px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.actions {
+    margin-top: 20px;
+}

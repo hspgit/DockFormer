@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DockFormer Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DockFormer Dashboard</h1>
+        </header>
+
+        <section class="upload-section">
+            <h2>Upload YAML Configuration</h2>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <div class="file-input">
+                    <input type="file" name="yamlFile" id="yamlFile" accept=".yaml,.yml">
+                    <label for="yamlFile">Select YAML File</label>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </form>
+        </section>
+
+        <section class="container-list">
+            <h2>Containers</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Image</th>
+                        <th>Status</th>
+                        <th>Ports</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .containers}}
+                    <tr class="status-{{.Status}}">
+                        <td>{{.ID}}</td>
+                        <td>{{.Name}}</td>
+                        <td>{{.Image}}</td>
+                        <td><span class="status-badge">{{.Status}}</span></td>
+                        <td>{{.Ports}}</td>
+                        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                        <td class="actions">
+                            {{if eq .Status "running"}}
+                            <a href="/container/{{.ID}}/stop" class="btn btn-sm btn-warning">Stop</a>
+                            {{else if eq .Status "created" "exited" "stopped"}}
+                            <a href="/container/{{.ID}}/start" class="btn btn-sm btn-success">Start</a>
+                            {{end}}
+                            <a href="/container/{{.ID}}/restart" class="btn btn-sm btn-info">Restart</a>
+                            <a href="/container/{{.ID}}/logs" class="btn btn-sm btn-secondary">Logs</a>
+                            <button class="btn btn-sm btn-danger" onclick="deleteContainer({{.ID}})">Delete</button>
+                        </td>
+                    </tr>
+                    {{else}}
+                    <tr>
+                        <td colspan="7" class="empty-message">No containers found</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

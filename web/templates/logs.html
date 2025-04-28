@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Container Logs - DockFormer</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .logs-container {
+            background: #1e1e1e;
+            color: #f1f1f1;
+            padding: 20px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            height: 600px;
+            overflow-y: scroll;
+        }
+        .container-info {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Container Logs</h1>
+        </header>
+
+        <div class="container-info">
+            <h2>{{.container.Name}}</h2>
+            <p><strong>Status:</strong> {{.container.Status}}</p>
+            <p><strong>Image:</strong> {{.container.Image}}</p>
+            <p><strong>Created:</strong> {{.container.CreatedAt.Format "2006-01-02 15:04:05"}}</p>
+            <a href="/" class="btn">Back to Dashboard</a>
+        </div>
+
+        <div class="logs-container">
+            {{.logs}}
+        </div>
+    </div>
+</body>
+</html>
