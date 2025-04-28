@@ -16,12 +16,17 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	_ "mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+type ContainersConfig struct {
+	Containers []ContainerConfig `yaml:"containers"`
+}
 
 // ContainerConfig represents the YAML configuration for container creation
 type ContainerConfig struct {
@@ -34,12 +39,12 @@ type ContainerConfig struct {
 	Networks []string          `yaml:"networks,omitempty"`
 }
 
-var dockerCli *client.Client
+var dockerClient *client.Client
 
 // InitDocker initializes the Docker client
 func InitDocker() error {
 	var err error
-	dockerCli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	return err
 }
 
@@ -100,7 +105,7 @@ func setupRoutes(router *gin.Engine) {
 func dashboardHandler(c *gin.Context) {
 	var containerList []models.Container
 
-	// Get containers from database
+	// Get containers from the database
 	result := database.GetDB().Find(&containerList)
 	if result.Error != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -112,8 +117,8 @@ func dashboardHandler(c *gin.Context) {
 	// Update container statuses from Docker
 	ctx := context.Background()
 	for i := range containerList {
-		if dockerCli != nil {
-			containerInfo, err := dockerCli.ContainerInspect(ctx, containerList[i].Name)
+		if dockerClient != nil {
+			containerInfo, err := dockerClient.ContainerInspect(ctx, containerList[i].Name)
 			if err == nil {
 				containerList[i].Status = models.ContainerStatus(containerInfo.State.Status)
 			}
@@ -127,7 +132,6 @@ func dashboardHandler(c *gin.Context) {
 
 func uploadYamlHandler(c *gin.Context) {
 	// Get the file from the request
-	var _ = c
 	file, err := c.FormFile("yamlFile")
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -169,8 +173,8 @@ func uploadYamlHandler(c *gin.Context) {
 		return
 	}
 
-	// Parse the YAML into ContainerConfig
-	var config ContainerConfig
+	// Parse the YAML into ContainersConfig
+	var config ContainersConfig
 	if err := yaml.Unmarshal(yamlData, &config); err != nil {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"error": "Failed to parse YAML: " + err.Error(),
@@ -178,41 +182,30 @@ func uploadYamlHandler(c *gin.Context) {
 		return
 	}
 
-	// Create a container model from the config
-	containerObj := models.Container{
-		Name:   config.Name,
-		Image:  config.Image,
-		Ports:  config.Ports,
-		Status: "created", // Initial status
-	}
-
-	// Create container in Docker
-	if err := createDockerContainer(config); err != nil {
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error": "Failed to create Docker container: " + err.Error(),
-		})
-		return
-	}
-
-	// Save to database
-	if result := database.GetDB().Create(&containerObj); result.Error != nil {
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error": "Failed to create container in database: " + result.Error.Error(),
-		})
-		return
-	}
-
-	// Store YAML file for reference (optional)
-	uploadDir := "./uploads"
-	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			log.Printf("Failed to create uploads directory: %v", err)
+	// Iterate over each container configuration and create containers
+	for _, containerConfig := range config.Containers {
+		containerID, err := createDockerContainer(containerConfig)
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": fmt.Sprintf("Failed to create container '%s': %v", containerConfig.Name, err),
+			})
+			return
 		}
-	}
 
-	filePath := filepath.Join(uploadDir, file.Filename)
-	if err := c.SaveUploadedFile(file, filePath); err != nil {
-		log.Printf("Failed to save uploaded file: %v", err)
+		// Save to the database
+		containerObj := models.Container{
+			Name:        containerConfig.Name,
+			Image:       containerConfig.Image,
+			Ports:       containerConfig.Ports,
+			ContainerID: containerID,
+			Status:      "created",
+		}
+		if result := database.GetDB().Create(&containerObj); result.Error != nil {
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": fmt.Sprintf("Failed to save container '%s' to database: %v", containerConfig.Name, result.Error),
+			})
+			return
+		}
 	}
 
 	// Redirect back to dashboard
@@ -232,7 +225,7 @@ func startContainerHandler(c *gin.Context) {
 
 	// Start Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerStart(ctx, containerObj.Name, container.StartOptions{}); err != nil {
+	if err := dockerClient.ContainerStart(ctx, containerObj.Name, container.StartOptions{}); err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": "Failed to start container: " + err.Error(),
 		})
@@ -260,7 +253,7 @@ func stopContainerHandler(c *gin.Context) {
 
 	// Stop Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerStop(ctx, containerObj.Name, container.StopOptions{}); err != nil {
+	if err := dockerClient.ContainerStop(ctx, containerObj.Name, container.StopOptions{}); err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": "Failed to stop container: " + err.Error(),
 		})
@@ -288,7 +281,7 @@ func restartContainerHandler(c *gin.Context) {
 
 	// Restart Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerRestart(ctx, containerObj.Name, container.StopOptions{}); err != nil {
+	if err := dockerClient.ContainerRestart(ctx, containerObj.Name, container.StopOptions{}); err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": "Failed to restart container: " + err.Error(),
 		})
@@ -321,7 +314,7 @@ func containerLogsHandler(c *gin.Context) {
 		ShowStderr: true,
 		Tail:       "100",
 	}
-	logReader, err := dockerCli.ContainerLogs(ctx, containerObj.Name, options)
+	logReader, err := dockerClient.ContainerLogs(ctx, containerObj.Name, options)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": "Failed to get container logs: " + err.Error(),
@@ -361,10 +354,10 @@ func getContainers(c *gin.Context) {
 	}
 
 	// Update container statuses from Docker
-	if dockerCli != nil {
+	if dockerClient != nil {
 		ctx := context.Background()
 		for i := range containerList {
-			containerInfo, err := dockerCli.ContainerInspect(ctx, containerList[i].Name)
+			containerInfo, err := dockerClient.ContainerInspect(ctx, containerList[i].Name)
 			if err == nil {
 				containerList[i].Status = models.ContainerStatus(containerInfo.State.Status)
 			}
@@ -385,9 +378,9 @@ func getContainer(c *gin.Context) {
 	}
 
 	// Get latest status from Docker
-	if dockerCli != nil {
+	if dockerClient != nil {
 		ctx := context.Background()
-		containerInfo, err := dockerCli.ContainerInspect(ctx, containerObj.Name)
+		containerInfo, err := dockerClient.ContainerInspect(ctx, containerObj.Name)
 		if err == nil {
 			containerObj.Status = models.ContainerStatus(containerInfo.State.Status)
 		}
@@ -399,6 +392,7 @@ func getContainer(c *gin.Context) {
 func createContainer(c *gin.Context) {
 	var containerObj models.Container
 
+	// Bind JSON payload to containerObj
 	if err := c.ShouldBindJSON(&containerObj); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -417,21 +411,24 @@ func createContainer(c *gin.Context) {
 		Ports: containerObj.Ports,
 	}
 
-	if err := createDockerContainer(config); err != nil {
+	containerID, err := createDockerContainer(config)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Docker container: " + err.Error()})
 		return
 	}
 
-	// Set initial status
+	// Set initial status and ContainerID
 	containerObj.Status = "created"
+	containerObj.ContainerID = containerID
 
-	// Save to database
+	// Save to the database
 	result := database.GetDB().Create(&containerObj)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
 
+	// Respond with the created container object
 	c.JSON(http.StatusCreated, containerObj)
 }
 
@@ -479,7 +476,7 @@ func deleteContainer(c *gin.Context) {
 
 	// Remove Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerRemove(ctx, containerObj.Name, container.RemoveOptions{
+	if err := dockerClient.ContainerRemove(ctx, containerObj.Name, container.RemoveOptions{
 		Force:         true,
 		RemoveVolumes: true,
 	}); err != nil {
@@ -507,7 +504,7 @@ func apiStartContainer(c *gin.Context) {
 
 	// Start Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerStart(ctx, containerObj.Name, container.StartOptions{}); err != nil {
+	if err := dockerClient.ContainerStart(ctx, containerObj.Name, container.StartOptions{}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start container: " + err.Error()})
 		return
 	}
@@ -530,7 +527,7 @@ func apiStopContainer(c *gin.Context) {
 
 	// Stop Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerStop(ctx, containerObj.Name, container.StopOptions{}); err != nil {
+	if err := dockerClient.ContainerStop(ctx, containerObj.Name, container.StopOptions{}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop container: " + err.Error()})
 		return
 	}
@@ -553,7 +550,7 @@ func apiRestartContainer(c *gin.Context) {
 
 	// Restart Docker container
 	ctx := context.Background()
-	if err := dockerCli.ContainerRestart(ctx, containerObj.Name, container.StopOptions{}); err != nil {
+	if err := dockerClient.ContainerRestart(ctx, containerObj.Name, container.StopOptions{}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to restart container: " + err.Error()})
 		return
 	}
@@ -568,15 +565,15 @@ func apiRestartContainer(c *gin.Context) {
 // Helper functions
 
 // createDockerContainer creates a container in Docker based on the provided configuration
-func createDockerContainer(config ContainerConfig) error {
+func createDockerContainer(config ContainerConfig) (string, error) {
 	ctx := context.Background()
 
 	// Pull image if it doesn't exist
-	_, _, err := dockerCli.ImageInspectWithRaw(ctx, config.Image)
+	_, err := dockerClient.ImageInspect(ctx, config.Image)
 	if err != nil {
-		reader, pullErr := dockerCli.ImagePull(ctx, config.Image, image.PullOptions{})
+		reader, pullErr := dockerClient.ImagePull(ctx, config.Image, image.PullOptions{})
 		if pullErr != nil {
-			return pullErr
+			return "", pullErr
 		}
 		defer func(reader io.ReadCloser) {
 			err := reader.Close()
@@ -587,7 +584,7 @@ func createDockerContainer(config ContainerConfig) error {
 
 		// Stream the image pull progress
 		if _, copyErr := io.Copy(os.Stdout, reader); copyErr != nil {
-			return copyErr
+			return "", copyErr
 		}
 	}
 
@@ -604,7 +601,7 @@ func createDockerContainer(config ContainerConfig) error {
 
 			parts := strings.Split(portStr, ":")
 			if len(parts) != 2 {
-				return errors.New("invalid port mapping format")
+				return "", errors.New("invalid port mapping format")
 			}
 
 			hostPort := parts[0]
@@ -617,7 +614,7 @@ func createDockerContainer(config ContainerConfig) error {
 
 			natPort, err := nat.NewPort(strings.Split(containerPort, "/")[1], strings.Split(containerPort, "/")[0])
 			if err != nil {
-				return err
+				return "", err
 			}
 
 			exposedPorts[natPort] = struct{}{}
@@ -632,14 +629,14 @@ func createDockerContainer(config ContainerConfig) error {
 	}
 
 	// Check if the container already exists
-	_, err = dockerCli.ContainerInspect(ctx, config.Name)
+	_, err = dockerClient.ContainerInspect(ctx, config.Name)
 	if err == nil {
 		// Container exists, remove it first
-		if err := dockerCli.ContainerRemove(ctx, config.Name, container.RemoveOptions{
+		if err := dockerClient.ContainerRemove(ctx, config.Name, container.RemoveOptions{
 			Force:         true,
 			RemoveVolumes: true,
 		}); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -662,7 +659,7 @@ func createDockerContainer(config ContainerConfig) error {
 		hostConfig.Binds = config.Volumes
 	}
 
-	_, err = dockerCli.ContainerCreate(
+	response, err := dockerClient.ContainerCreate(
 		ctx,
 		containerConfig,
 		hostConfig,
@@ -670,8 +667,11 @@ func createDockerContainer(config ContainerConfig) error {
 		nil,
 		config.Name,
 	)
+	if err != nil {
+		return "", err
+	}
 
-	return err
+	return response.ID, nil
 }
 
 // syncContainersWithDocker synchronizes the database with existing Docker containers
@@ -679,7 +679,7 @@ func syncContainersWithDocker() error {
 	ctx := context.Background()
 
 	// Get all containers from Docker
-	containerList, err := dockerCli.ContainerList(ctx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return err
 	}
